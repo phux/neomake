@@ -861,15 +861,10 @@ let s:action_queue = {'WinEnter': []}
 " When called recursively (queueing the same event/data again, it will be
 " re-queued also).
 function! s:queue_action(event, data) abort
-    if get(s:action_queue[a:event], 0, []) == a:data
-        " Re-queueing currently being processed action.
-        return 0
-    endif
     let jobinfo = a:data[1][0]
     call neomake#utils#DebugMessage(printf('Queueing action: %s for %s.',
                 \ a:data[0], a:event), jobinfo)
     call add(s:action_queue[a:event], a:data)
-    call add(s:make_info[jobinfo.make_id].queued_jobs, [jobinfo, a:event])
 
     if !exists('#neomake_event_queue#'.a:event)
         augroup neomake_event_queue
@@ -880,28 +875,39 @@ endfunction
 
 function! s:process_action_queue(event) abort
     let queue = s:action_queue[a:event]
-    let len = len(queue)
-    let processed = []
+    let queue_len = len(queue)
     call neomake#utils#DebugMessage(printf('action queue: processing for %s (%d items, winnr: %d).',
-                \ a:event, len, winnr()), {'bufnr': bufnr('%')})
-    for i in range(0, len-1)
-        let data = queue[i]
-        if call(data[0], data[1])
-            call add(processed, data)
+                \ a:event, queue_len, winnr()), {'bufnr': bufnr('%')})
+
+    let requeue = []
+    for _ in range(0, queue_len-1)
+        let data = remove(queue, 0)
+        let jobinfo = data[1][0]
+        if !empty(filter(copy(requeue), 'v:val[1][0] == jobinfo'))
+            call neomake#utils#DebugMessage(printf(
+                        \ 'action queue: skipping %s for already requeued jobinfo.',
+                        \ data[0]), jobinfo)
+        else
+            call neomake#utils#DebugMessage(printf('action queue: calling %s.',
+                        \ data[0]), jobinfo)
+            if call(data[0], data[1])
+                continue
+            endif
         endif
+        call neomake#utils#DebugMessage(printf('action queue: requeueing %s.',
+                    \ data[0]), jobinfo)
+        let requeue += [data]
     endfor
     call neomake#utils#DebugMessage(printf('action queue: processed %d items.',
-                \ len(processed)), {'bufnr': bufnr('%')})
-    call filter(queue, 'index(processed, v:val) == -1')
-    for data in processed
-        let jobinfo = data[1][0]
-        let make_info = s:make_info[jobinfo.make_id]
-        let queued_jobs = make_info.queued_jobs
-        call remove(queued_jobs, index(queued_jobs, [jobinfo, a:event]))
-        if empty(queued_jobs)
-            call s:clean_make_info(jobinfo.make_id)
+                \ queue_len - len(requeue)), {'bufnr': bufnr('%')})
+
+    " Requeue, but handle already queued actions from nested calls.
+    for q in requeue
+        if index(queue, q) == -1
+            call add(queue, q)
         endif
     endfor
+
     " Cleanup augroup.
     if empty(queue)
         for v in values(s:action_queue)
@@ -944,7 +950,6 @@ function! s:Make(options) abort
                 \ 'cwd': getcwd(),
                 \ 'verbosity': get(g:, 'neomake_verbose', 1),
                 \ 'active_jobs': [],
-                \ 'queued_jobs': [],
                 \ 'finished_jobs': 0,
                 \ 'options': options,
                 \ }
@@ -1151,12 +1156,30 @@ function! s:AddExprCallback(jobinfo, prev_index) abort
     return entries
 endfunction
 
-function! s:CleanJobinfo(jobinfo) abort
+function! s:CleanJobinfo(jobinfo, ...) abort
     if get(a:jobinfo, 'pending_output', 0) && !get(a:jobinfo, 'canceled', 0)
         call neomake#utils#DebugMessage(
                     \ 'Output left to be processed, not cleaning job yet.', a:jobinfo)
         return
     endif
+
+    " Check if there are any queued actions for this job.
+    let queued_actions = []
+    for q in values(s:action_queue)
+        for v in q
+            if v[1][0] == a:jobinfo
+                let queued_actions += [v[0]]
+            endif
+        endfor
+    endfor
+    if !empty(queued_actions)
+        call neomake#utils#DebugMessage(printf(
+                    \ 'Skipping cleaning of job info because of queued actions: %s.',
+                    \ join(queued_actions, ', ')), a:jobinfo)
+        call s:queue_action('WinEnter', ['s:CleanJobinfo', [a:jobinfo]])
+        return
+    endif
+
     call neomake#utils#DebugMessage('Cleaning jobinfo.', a:jobinfo)
 
     let make_info = s:make_info[a:jobinfo.make_id]
@@ -1216,6 +1239,7 @@ function! s:CleanJobinfo(jobinfo) abort
     endif
 
     call s:clean_make_info(a:jobinfo.make_id)
+    return 1
 endfunction
 
 function! s:clean_make_info(make_id) abort
@@ -1224,7 +1248,25 @@ function! s:clean_make_info(make_id) abort
         call neomake#utils#DebugMessage('Make info was cleaned already.', {'make_id': a:make_id})
         return
     endif
-    if !empty(make_info.active_jobs) || !empty(make_info.queued_jobs)
+    if !empty(make_info.active_jobs)
+        call neomake#utils#DebugMessage(printf(
+                    \ 'Skipping cleaning of make info: %d active jobs.',
+                    \ len(make_info.active_jobs)), {'make_id': a:make_id})
+        return
+    endif
+    let queued_jobs = []
+    for q in values(s:action_queue)
+        for v in q
+            let jobinfo = v[1][0]
+            if jobinfo.make_id == a:make_id && v[0] !=# 's:CleanJobinfo'
+                let queued_jobs += [jobinfo.id]
+            endif
+        endfor
+    endfor
+    if !empty(queued_jobs)
+        call neomake#utils#DebugMessage(printf(
+                    \ 'Skipping cleaning of make info because of queued jobs: %s.',
+                    \ join(queued_jobs, ', ')), {'make_id': a:make_id})
         return
     endif
     call neomake#utils#DebugMessage('Cleaning make info.', {'make_id': a:make_id})
@@ -1280,7 +1322,7 @@ function! s:CanProcessJobOutput() abort
     return 0
 endfunction
 
-function! s:create_locqf_list(jobinfo) abort
+function! s:create_locqf_list(jobinfo, ...) abort
     " TODO: queue this when in non-normal mode(s)
     " Error detected while processing function Tabline[29]..TabLabel[16]..<SNR>134_exit_handler[71]..<SNR>134_handle_next_maker[16]..<SNR>134_CleanJobinfo[40]..<SNR>134_clean_for_new_make[5]..<SNR>134_create_locqf_list:
     " E523: Not allowed here:             lgetexpr ''
@@ -1351,6 +1393,28 @@ function! s:cd_to_jobs_cwd(jobinfo) abort
     return ['', cwd, '']
 endfunction
 
+let s:retry_func = {'callbacks': {}, 'queue': []}
+function! s:retry_func.cb(timer) abort
+    let cb = self.callbacks[a:timer]
+    return self.pcall(cb[0], cb[1], a:timer)
+endfunction
+function! s:retry_func.pcall(fn, args, ...) abort
+    let timer = a:0 ? a:1 : 0
+    let jobinfo = a:args[0]
+    try
+        let R = call(a:fn, a:args + [1])
+        if timer
+            unlet self.callbacks[timer]
+        endif
+        return R
+    catch /^\%(Vim\%((\a\+)\)\=:\%(E48\|E523\)\)/  " only E48/E523 (sandbox / not allowed here)
+        call neomake#utils#DebugMessage('Error during pcall: '.v:exception.'.', jobinfo)
+        call neomake#utils#DebugMessage(printf('(in %s)', v:throwpoint), jobinfo)
+        call s:queue_action('WinEnter', [a:fn, a:args])
+    endtry
+    return 0
+endfunction
+
 " Do we need to replace (instead of append) the location/quickfix list, for
 " :lwindow to not open it with only invalid entries?!
 " Without patch-7.4.379 this does not work though, and a new list needs to
@@ -1365,6 +1429,9 @@ function! s:ProcessEntries(jobinfo, entries, ...) abort
         return s:queue_action('WinEnter', ['s:ProcessEntries',
                     \ [a:jobinfo, a:entries] + a:000])
     endif
+    if !a:0 || type(a:[len(a:000)]) != 0
+        return s:retry_func.pcall('s:ProcessEntries', [a:jobinfo, a:entries] + a:000)
+    endif
     let file_mode = a:jobinfo.file_mode
 
     call neomake#utils#DebugMessage(printf(
@@ -1372,7 +1439,7 @@ function! s:ProcessEntries(jobinfo, entries, ...) abort
 
     call s:clean_for_new_make(a:jobinfo)
 
-    if a:0
+    if a:0 > 1
         " Via errorformat processing, where the list has been set already.
         let prev_list = a:1
     else
@@ -1494,6 +1561,7 @@ function! s:ProcessEntries(jobinfo, entries, ...) abort
 
     if !counts_changed
         let counts_changed = (file_mode ? getloclist(0) : getqflist()) != prev_list
+        " Assert !counts_changed, string([file_mode, prev_list, getloclist(0)])
     endif
     if counts_changed
         call neomake#utils#hook('NeomakeCountsChanged', {'reset': 0, 'jobinfo': a:jobinfo})
@@ -1504,10 +1572,13 @@ function! s:ProcessEntries(jobinfo, entries, ...) abort
     return 1
 endfunction
 
-function! s:ProcessJobOutput(jobinfo, lines, source) abort
+function! s:ProcessJobOutput(jobinfo, lines, source, ...) abort
     if s:need_to_postpone_loclist(a:jobinfo)
         return s:queue_action('WinEnter', ['s:ProcessJobOutput',
                     \ [a:jobinfo, a:lines, a:source]])
+    endif
+    if !a:0
+        return s:retry_func.pcall('s:ProcessJobOutput', [a:jobinfo, a:lines, a:source])
     endif
 
     let maker = a:jobinfo.maker
@@ -1521,8 +1592,7 @@ function! s:ProcessJobOutput(jobinfo, lines, source) abort
                         \ 'output': a:lines,
                         \ 'source': a:source,
                         \ 'jobinfo': a:jobinfo}], maker)
-            call s:ProcessEntries(a:jobinfo, entries)
-            return
+            return s:ProcessEntries(a:jobinfo, entries)
         endif
 
         " Old-school handling through errorformat.
@@ -1577,7 +1647,7 @@ function! s:ProcessJobOutput(jobinfo, lines, source) abort
 
         let entries = s:AddExprCallback(a:jobinfo, len(prev_list)-1)
         call s:ProcessEntries(a:jobinfo, entries, prev_list)
-    catch
+    catch /^\%(Vim\%((\a\+)\)\=:\%(E48\|E523\)\)\@!/  " everything, but E48/E523 (sandbox / not allowed here)
         if v:exception ==# 'NeomakeTestsException'
             throw v:exception
         endif
@@ -1589,6 +1659,7 @@ function! s:ProcessJobOutput(jobinfo, lines, source) abort
         call neomake#utils#DebugMessage(printf('(in %s)', v:throwpoint), a:jobinfo)
         return
     endtry
+    return 1
 endfunction
 
 function! s:ProcessPendingOutputs() abort
@@ -1680,6 +1751,7 @@ function! s:need_to_postpone_loclist(jobinfo) abort
     if index(get(w:, 'neomake_make_ids', []), a:jobinfo.make_id) != -1
         return 0
     endif
+    call neomake#utils#DebugMessage('Postponing location list processing.', a:jobinfo)
     return 1
 endfunction
 
