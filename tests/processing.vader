@@ -577,23 +577,35 @@ Execute (Pending output gets processed in order of jobs (file mode first)):
 
 Execute (job finishes while in tabline function):
   if NeomakeAsyncTestsSetup()
-    Save &tabline
+    Save &tabline, g:neomake_test_flagfile
+
+    let g:neomake_test_flagfile = tempname()
 
     function! NeomakeTestTabline()
       call neomake#utils#DebugMessage('tabline_start.')
-      sleep 100m
+      call writefile(['1'], g:neomake_test_flagfile)
+      while 1
+        sleep 1m
+        if !filereadable(g:neomake_test_flagfile)
+          break
+        endif
+      endwhile
+      " Vim needs one more sleep here.
+      sleep 1m
       call neomake#utils#DebugMessage('tabline_end.')
     endfunction
 
     new
     set tabline=%!NeomakeTestTabline()
-    let maker1 = NeomakeTestsCommandMaker('sleep', 'sleep .01; echo slept_in_tabline')
+    let maker1 = NeomakeTestsCommandMaker('sleep', printf(
+    \ 'while ! [ -e %s ]; do sleep 0.01; done; echo finished_in_tabline; rm %s',
+    \ fnameescape(g:neomake_test_flagfile), fnameescape(g:neomake_test_flagfile)))
     let jobinfo = neomake#GetJob(neomake#Make(1, [maker1])[0])
     redraw
     NeomakeTestsWaitForFinishedJobs
     AssertNeomakeMessage 'tabline_start.', 3
     AssertNeomakeMessage 'Error during pcall: Vim(laddexpr):E523: Not allowed here:                 laddexpr a:lines.', 3
-    AssertNeomakeMessage '\m(in function .*\.\.NeomakeTestTabline\[2\]\.\..*)', 3
+    AssertNeomakeMessage '\v\(in function .*\.\.NeomakeTestTabline\[\d+\]\.\..*\)', 3
 
     AssertNeomakeMessage 'Skipping cleaning of job info because of queued actions: s:ProcessJobOutput.'
     AssertNeomakeMessage 'Queueing action: s:CleanJobinfo for WinEnter.'
@@ -601,6 +613,7 @@ Execute (job finishes while in tabline function):
 
     doautocmd WinEnter
     AssertEqual len(g:neomake_test_finished), 1
+    AssertEqual map(getloclist(0), 'v:val.text'), ['finished_in_tabline']
     bwipe
   endif
 
@@ -617,8 +630,10 @@ Execute (get_list_entries job processes entries while in tabline function):
 
     let g:neomake_test_tabline = 0
     function! NeomakeTestTabline()
+      AssertEqual len(g:neomake_test_finished), 0
       let g:neomake_test_tabline = 1
       sleep 10m
+      AssertEqual len(g:neomake_test_finished), 1
     endfunction
 
     new
