@@ -1180,6 +1180,16 @@ function! s:CleanJobinfo(jobinfo, ...) abort
         return
     endif
 
+    let mode = mode()
+    if index(['n', 'i'], mode) == -1
+        call neomake#utils#DebugMessage('Not cleaning job info for mode "'.mode.'".')
+        return s:queue_action('WinEnter', ['s:CleanJobinfo',
+                    \ [a:jobinfo] + a:000])
+    elseif s:need_to_postpone_loclist(a:jobinfo)
+        return s:queue_action('WinEnter', ['s:CleanJobinfo',
+                    \ [a:jobinfo] + a:000])
+    endif
+
     call neomake#utils#DebugMessage('Cleaning jobinfo.', a:jobinfo)
 
     let make_info = s:make_info[a:jobinfo.make_id]
