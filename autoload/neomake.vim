@@ -1362,8 +1362,7 @@ function! s:handle_locqf_list_for_finished_jobs(make_info) abort
         endif
     endif
 
-    " TODO: cleanup/filter?!
-    " Remove/deprecate jobinfo.
+    " TODO: remove/deprecate jobinfo.
     let hook_context = {
                 \ 'make_id': a:make_info.options.make_id,
                 \ 'options': a:make_info.options,
