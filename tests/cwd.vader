@@ -57,8 +57,8 @@ Execute (tcd is handled properly):
       AssertEqual dir2, getcwd()
 
       NeomakeTestsWaitForFinishedJobs
-      AssertNeomakeMessage 'Postponing location list processing.'
-      AssertNeomakeMessage 'Queueing action: s:CleanJobinfo for WinEnter.', 3
+      AssertNeomakeMessage 'Postponing final location list handling (in another window).'
+      AssertNeomakeMessage 'Queueing action: s:handle_locqf_list_for_finished_jobs for WinEnter.', 3
 
       exe 'tabnext' tab1
       AssertNeomakeMessage 'Cleaning make info.', 3

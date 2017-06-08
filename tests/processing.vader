@@ -61,8 +61,15 @@ Execute (Location list is only cleared in normal/insert mode on success):
     norm! V
     NeomakeTestsWaitForFinishedJobs
     AssertEqual map(getloclist(0), 'v:val.text'), ['init'], 'Location list has not been updated'
-    AssertNeomakeMessage 'Not cleaning job info for mode "V".'
-    AssertNeomakeMessage 'Queueing action: s:CleanJobinfo for WinEnter.'
+
+    AssertEqual len(g:neomake_test_countschanged), 0
+    AssertEqual len(g:neomake_test_jobfinished), 1
+    AssertEqual len(g:neomake_test_finished), 0
+
+    AssertNeomakeMessage 'Cleaning jobinfo.', 3
+    AssertNeomakeMessage 'File-level errors cleaned.', 3
+    AssertNeomakeMessage 'Postponing final location list handling for mode "V".'
+    AssertNeomakeMessage 'Queueing action: s:handle_locqf_list_for_finished_jobs for WinEnter.'
 
     AssertEqual mode(), 'V'
     exe "norm! \<Esc>"
@@ -72,8 +79,7 @@ Execute (Location list is only cleared in normal/insert mode on success):
     doautocmd WinEnter
     AssertEqual len(g:neomake_test_countschanged), 0
     AssertEqual len(g:neomake_test_finished), 1
-    AssertNeomakeMessage 'Cleaning jobinfo.', 3
-    AssertNeomakeMessage 'Creating location list.', 3
+    AssertNeomakeMessage 'Cleaning location list.', 3
     AssertEqual map(getloclist(0), 'v:val.text'), []
     bwipe
   endif
@@ -92,18 +98,20 @@ Execute (Location list is only cleared in same window on success):
     NeomakeTestsWaitForFinishedJobs
     AssertEqual map(getloclist(win), 'v:val.text'), ['init'], 'Location list has not been updated'
     AssertEqual map(getloclist(win2), 'v:val.text'), ['init2'], 'Location list has not been updated'
-    AssertNeomakeMessage 'Postponing location list processing.'
-    AssertNeomakeMessage 'Queueing action: s:CleanJobinfo for WinEnter.'
+    AssertNeomakeMessage 'Cleaning jobinfo.', 3
+    AssertNeomakeMessage 'Postponing final location list handling (in another window).'
+    AssertNeomakeMessage 'Queueing action: s:handle_locqf_list_for_finished_jobs for WinEnter.'
     AssertEqual len(g:neomake_test_countschanged), 0
     AssertEqual len(g:neomake_test_finished), 0
 
     wincmd p
     AssertEqual len(g:neomake_test_countschanged), 0
     AssertEqual len(g:neomake_test_finished), 1
-    AssertNeomakeMessage 'Cleaning jobinfo.', 3
-    AssertNeomakeMessage 'Creating location list.', 3
+    AssertNeomakeMessage 'Cleaning location list.', 3
     AssertEqual map(getloclist(0), 'v:val.text'), []
     AssertEqual map(getloclist(win2), 'v:val.text'), ['init2'], 'Location list has not been updated'
+    wincmd p
+    bwipe
     bwipe
   endif
 
