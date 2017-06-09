@@ -1276,7 +1276,7 @@ function! s:clean_make_info(make_id) abort
     endif
 endfunction
 
-function! s:do_clean_make_info(make_id)
+function! s:do_clean_make_info(make_id) abort
     let make_info = get(s:make_info, a:make_id, {})
 
     call neomake#utils#DebugMessage('Cleaning make info.', {'make_id': a:make_id})
