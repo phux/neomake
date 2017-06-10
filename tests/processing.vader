@@ -645,7 +645,7 @@ Execute (job finishes while in tabline function):
 
     let g:neomake_test_flagfile = tempname()
 
-    function! NeomakeTestTabline()
+    function! s:NeomakeTestTabline()
       call neomake#utils#DebugMessage('tabline_start.')
       call writefile(['1'], g:neomake_test_flagfile)
       while 1
@@ -660,7 +660,7 @@ Execute (job finishes while in tabline function):
     endfunction
 
     new
-    set tabline=%!NeomakeTestTabline()
+    set tabline=%!s:NeomakeTestTabline()
     let maker1 = NeomakeTestsCommandMaker('sleep', printf(
     \ 'while ! [ -e %s ]; do sleep 0.01; done; echo finished_in_tabline; rm %s',
     \ fnameescape(g:neomake_test_flagfile), fnameescape(g:neomake_test_flagfile)))
@@ -669,7 +669,7 @@ Execute (job finishes while in tabline function):
     NeomakeTestsWaitForFinishedJobs
     AssertNeomakeMessage 'tabline_start.', 3
     AssertNeomakeMessage 'Error during pcall: Vim(laddexpr):E523: Not allowed here:                 laddexpr a:lines.', 3
-    AssertNeomakeMessage '\v\(in function .*\.\.NeomakeTestTabline\[\d+\]\.\..*\)', 3
+    AssertNeomakeMessage '\v\(in function .*\.\.\<SNR\>\d+_NeomakeTestTabline\[\d+\]\.\..*\)', 3
 
     AssertNeomakeMessage 'Skipping cleaning of job info because of queued actions: s:ProcessJobOutput.'
     AssertNeomakeMessage 'Queueing action: s:CleanJobinfo for WinEnter.'
@@ -693,7 +693,7 @@ Execute (get_list_entries job processes entries while in tabline function):
     endfunction
 
     let g:neomake_test_tabline = 0
-    function! NeomakeTestTabline()
+    function! s:NeomakeTestTabline()
       AssertEqual len(g:neomake_test_finished), 0
       let g:neomake_test_tabline = 1
       sleep 10m
@@ -701,14 +701,14 @@ Execute (get_list_entries job processes entries while in tabline function):
     endfunction
 
     new
-    set tabline=%!NeomakeTestTabline()
+    set tabline=%!s:NeomakeTestTabline()
 
-    Save g:neomake_test_jobinfo, g:NeomakeTestF
-    function! g:NeomakeTestF(...) abort
+    Save g:neomake_test_jobinfo
+    function! s:NeomakeTestF(...) abort
       call neomake#Make(1, [g:entry_maker])
     endfunction
 
-    call timer_start(0, function('g:NeomakeTestF'))
+    call timer_start(0, function('s:NeomakeTestF'))
     redraw
     NeomakeTestsWaitForFinishedJobs
     AssertEqual g:neomake_test_tabline, 1
