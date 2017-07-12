@@ -2175,8 +2175,13 @@ function! s:handle_next_job(prev_jobinfo) abort
             let error = substitute(v:exception, '^Neomake: ', '', '')
             call neomake#utils#ErrorMessage(error, {'make_id': make_id})
 
-            if options.serialize && neomake#utils#GetSetting('serialize_abort_on_error', maker, 0, options.ft, options.bufnr)
-                call s:abort_next_makers(make_id)
+            if options.serialize
+                if neomake#utils#GetSetting('serialize_abort_on_error', maker, 0, options.ft, options.bufnr)
+                    call s:abort_next_makers(make_id)
+                endif
+                if empty(make_info.jobs_queue)
+                    call s:clean_make_info(make_id)
+                endif
                 break
             endif
             continue
