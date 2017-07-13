@@ -329,6 +329,7 @@ Execute (Goes back to original window after opening list (wincmd in autocmd)):
     AssertEqual wincount + 1, winnr('$'), 'Location list has appeared'
 
     AssertNeomakeMessage 'action queue: calling s:ProcessEntries.', 3
+    AssertNeomakeMessage 'Processing 1 entries.', 3
     AssertNeomakeMessage 'Handling location list: executing lwindow.'
     Assert !exists('#neomake_event_queue#WinEnter'), 'autocmd was deleted'
     AssertNeomakeMessage 'action queue: processed 2 items.'
