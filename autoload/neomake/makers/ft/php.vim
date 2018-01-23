@@ -35,8 +35,18 @@ function! neomake#makers#ft#php#phpcs() abort
 endfunction
 
 function! neomake#makers#ft#php#phpmd() abort
+    let l:ruleset = neomake#utils#FindGlobFile('phpmd.xml.dist')
+    let l:customRuleset = neomake#utils#FindGlobFile('phpmd.xml')
+    if !empty(l:customRuleset)
+        let l:ruleset = l:customRuleset
+    endif
+
+    if empty(l:ruleset)
+        let l:ruleset = 'codesize,design,unusedcode,naming'
+    endif
+
     return {
-        \ 'args': ['%:p', 'text', 'codesize,design,unusedcode,naming'],
+        \ 'args': ['%:p', 'text', l:ruleset],
         \ 'errorformat': '%W%f:%l%\s%\s%#%m'
         \ }
 endfunction
