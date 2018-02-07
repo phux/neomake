@@ -20,13 +20,28 @@ endfunction
 
 function! neomake#makers#ft#php#phpcs() abort
     let l:args = ['--report=csv']
+    let l:executable = 'phpcs'
+    let l:localPath = getcwd() . '/vendor/bin/phpcs'
+    if !empty(glob(l:localPath))
+        let l:executable = l:localPath
+    endif
+
+    let l:ruleset = getcwd() . '/phpcs.xml.dist'
+    let l:customRuleset = getcwd() . '/phpcs.xml'
+    if !empty(glob(l:customRuleset))
+        let l:ruleset = l:customRuleset
+    endif
 
     "Add standard argument if one is set.
     if exists('g:neomake_php_phpcs_args_standard')
-        call add(l:args, '--standard=' . expand(g:neomake_php_phpcs_args_standard))
+        let l:ruleset = expand(g:neomake_php_phpcs_args_standard)
+    endif
+    if !empty(l:ruleset)
+        call add(l:args, '--standard=' . l:ruleset)
     endif
 
     return {
+        \ 'exe': l:executable,
         \ 'args': args,
         \ 'errorformat':
             \ '%-GFile\,Line\,Column\,Type\,Message\,Source\,Severity%.%#,'.
@@ -35,14 +50,37 @@ function! neomake#makers#ft#php#phpcs() abort
 endfunction
 
 function! neomake#makers#ft#php#phpmd() abort
+    let l:executable = 'phpmd'
+    let l:localPath = getcwd() . '/vendor/bin/phpmd'
+    if !empty(glob(l:localPath))
+        let l:executable = l:localPath
+    endif
+
+    let l:ruleset = getcwd() . '/phpmd.xml.dist'
+    let l:customRuleset = getcwd() . '/phpmd.xml'
+    if !empty(glob(l:customRuleset))
+        let l:ruleset = l:customRuleset
+    endif
+
+    if empty(l:ruleset)
+        let l:ruleset = 'codesize,design,unusedcode,naming'
+    endif
+
     return {
-        \ 'args': ['%:p', 'text', 'codesize,design,unusedcode,naming'],
+        \ 'exe': l:executable,
+        \ 'args': ['%:p', 'text', l:ruleset],
         \ 'errorformat': '%W%f:%l%\s%\s%#%m'
         \ }
 endfunction
 
 function! neomake#makers#ft#php#phpstan() abort
     " PHPStan normally considers 0 to be the default level, so that is used here as the default:
+    let l:executable = 'phpstan'
+    let l:localPath = getcwd() . '/vendor/bin/phpstan'
+    if !empty(glob(l:localPath))
+        let l:executable = l:localPath
+    endif
+
     let maker = {
         \ 'args': ['analyse', '--errorFormat', 'raw', '--no-progress', '--level', get(g:, 'neomake_phpstan_level', 0)],
         \ 'errorformat': '%E%f:%l:%m',
